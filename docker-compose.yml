@@ -50,7 +50,7 @@ services:
     volumes:
       - ./trino-config:/etc/trino/
 
-  airflow:
+  airflow-webserver:
     image: apache/airflow:2.9.1
     container_name: airflow-webserver
     environment:
