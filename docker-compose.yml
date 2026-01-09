@@ -46,58 +46,51 @@ services:
     image: trinodb/trino
     container_name: trino
     ports:
-      - "8080:8080" 
+      - "10.8.0.1:8080:8080" 
     volumes:
       - ./trino-config:/etc/trino/
+      # - ./trino-jars:/usr/lib/trino/plugin/hive/
+      # - ./trino-jars:/usr/lib/trino/plugin/iceberg/
 
-  airflow-webserver:
+  airflow:
     image: apache/airflow:2.9.1
-    container_name: airflow-webserver
+    container_name: airflow
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: 'IDuTBGUhBX87tgM9ez-3bQXk8ciMOJPnRhgSf5c_HIs='
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     depends_on:
       - postgres
     ports:
-      - "8081:8080"
+      - "10.8.0.1:8081:8080"
     volumes:
       - ./dags:/opt/airflow/dags
       - ./airflow_logs:/opt/airflow/logs
       - ./airflow_plugins:/opt/airflow/plugins
-      - ./requirements.txt:/requirements.txt
       - /var/run/docker.sock:/var/run/docker.sock
     command: >
-      bash -c "
-        pip install --no-cache-dir -r /requirements.txt &&
-        airflow db upgrade &&
-        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com --skip-if-exists &&
-        exec airflow webserver
-      "
+      bash -c "airflow db migrate &&
+              airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com &&
+              exec airflow webserver"
 
   airflow-scheduler:
     image: apache/airflow:2.9.1
     container_name: airflow-scheduler
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: 'IDuTBGUhBX87tgM9ez-3bQXk8ciMOJPnRhgSf5c_HIs='
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      _PIP_ADDITIONAL_REQUIREMENTS: "minio apache-airflow-providers-docker==4.0.0 pandas"
     depends_on:
       - postgres
-      - airflow-webserver
     volumes:
       - ./dags:/opt/airflow/dags
       - ./airflow_logs:/opt/airflow/logs
       - ./airflow_plugins:/opt/airflow/plugins
-      - ./requirements.txt:/requirements.txt
       - /var/run/docker.sock:/var/run/docker.sock
-    command: >
-      bash -c "
-        pip install --no-cache-dir -r /requirements.txt &&
-        exec airflow scheduler
-      "
+    command: airflow scheduler
 
   dbt:
     image: ghcr.io/dbt-labs/dbt-postgres:1.7.0
@@ -106,3 +99,33 @@ services:
       - ./dbt:/usr/app
     depends_on:
       - postgres
+  
+  spark-master:
+    image: airflow/spark-master
+    build: ./spark/master
+    container_name: spark-master
+    ports:
+      - "8082:8080"
+      - "7077:7077"
+    environment:
+      - INIT_DAEMON_STEP=setup_spark
+
+  spark-worker:
+    image: airflow/spark-worker
+    build: ./spark/worker
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    ports:
+      - "8083:8083"
+    environment:
+      - "SPARK_MASTER=spark://spark-master:7077"
+
+  docker-proxy:
+    image: alpine/socat
+    command: "TCP4-LISTEN:2375,fork,reuseaddr UNIX-CONNECT:/var/run/docker.sock"
+    ports:
+      - "2376:2375"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
