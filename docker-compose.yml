@@ -1,5 +1,7 @@
 version: '3.8'
+
 services:
+  # ----------------- MINIO -----------------
   minio:
     image: minio/minio
     container_name: minio
@@ -11,6 +13,7 @@ services:
       MINIO_ROOT_PASSWORD: admin123
     command: server /data --console-address ":9001"
 
+  # ----------------- POSTGRES -----------------
   postgres:
     image: postgres:13
     container_name: postgres
@@ -23,6 +26,7 @@ services:
     volumes:
       - ./init:/docker-entrypoint-initdb.d
 
+  # ----------------- HIVE METASTORE -----------------
   hive-metastore:
     image: apache/hive:4.0.0
     container_name: hive-metastore
@@ -42,16 +46,20 @@ services:
       - ./postgresql-42.7.6.jar:/opt/hive/lib/postgresql-42.7.6.jar
       - ./hive-config/hive-site.xml:/opt/hive/conf/hive-site.xml
 
+  # ----------------- TRINO -----------------
   trino:
     image: trinodb/trino
     container_name: trino
     ports:
-      - "10.8.0.1:8080:8080" 
+      - "8080:8080"
+    depends_on:
+      - hive-metastore
     volumes:
       - ./trino-config:/etc/trino/
       # - ./trino-jars:/usr/lib/trino/plugin/hive/
       # - ./trino-jars:/usr/lib/trino/plugin/iceberg/
 
+  # ----------------- AIRFLOW WEB -----------------
   airflow:
     image: apache/airflow:2.9.1
     container_name: airflow
@@ -63,7 +71,7 @@ services:
     depends_on:
       - postgres
     ports:
-      - "10.8.0.1:8081:8080"
+      - "8081:8080"
     volumes:
       - ./dags:/opt/airflow/dags
       - ./airflow_logs:/opt/airflow/logs
@@ -74,6 +82,7 @@ services:
               airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com &&
               exec airflow webserver"
 
+  # ----------------- AIRFLOW SCHEDULER -----------------
   airflow-scheduler:
     image: apache/airflow:2.9.1
     container_name: airflow-scheduler
@@ -92,6 +101,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     command: airflow scheduler
 
+  # ----------------- DBT -----------------
   dbt:
     image: ghcr.io/dbt-labs/dbt-postgres:1.7.0
     container_name: dbt
@@ -100,6 +110,7 @@ services:
     depends_on:
       - postgres
   
+  # ----------------- SPARK MASTER -----------------
   spark-master:
     image: airflow/spark-master
     build: ./spark/master
@@ -110,6 +121,7 @@ services:
     environment:
       - INIT_DAEMON_STEP=setup_spark
 
+  # ----------------- SPARK WORKER -----------------
   spark-worker:
     image: airflow/spark-worker
     build: ./spark/worker
@@ -121,6 +133,7 @@ services:
     environment:
       - "SPARK_MASTER=spark://spark-master:7077"
 
+  # ----------------- DOCKER PROXY -----------------
   docker-proxy:
     image: alpine/socat
     command: "TCP4-LISTEN:2375,fork,reuseaddr UNIX-CONNECT:/var/run/docker.sock"
@@ -128,4 +141,3 @@ services:
       - "2376:2375"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-
