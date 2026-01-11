@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-  # ----------------- MINIO -----------------
   minio:
     image: minio/minio
     container_name: minio
@@ -13,7 +12,6 @@ services:
       MINIO_ROOT_PASSWORD: admin123
     command: server /data --console-address ":9001"
 
-  # ----------------- POSTGRES -----------------
   postgres:
     image: postgres:13
     container_name: postgres
@@ -26,10 +24,11 @@ services:
     volumes:
       - ./init:/docker-entrypoint-initdb.d
 
-  # ----------------- HIVE METASTORE -----------------
   hive-metastore:
     image: apache/hive:4.0.0
     container_name: hive-metastore
+    depends_on:
+      - postgres
     environment:
       SERVICE_NAME: metastore
       DB_DRIVER: postgres
@@ -40,60 +39,60 @@ services:
         -Djavax.jdo.option.ConnectionPassword=hivepassword
     ports:
       - "9083:9083"
-    depends_on:
-      - postgres
     volumes:
       - ./postgresql-42.7.6.jar:/opt/hive/lib/postgresql-42.7.6.jar
       - ./hive-config/hive-site.xml:/opt/hive/conf/hive-site.xml
 
-  # ----------------- TRINO -----------------
   trino:
     image: trinodb/trino
     container_name: trino
     ports:
-      - "8080:8080"
-    depends_on:
-      - hive-metastore
+      - "10.8.0.1:8080:8080"
     volumes:
       - ./trino-config:/etc/trino/
-      # - ./trino-jars:/usr/lib/trino/plugin/hive/
-      # - ./trino-jars:/usr/lib/trino/plugin/iceberg/
+      - ./trino-jars:/usr/lib/trino/plugin/iceberg
 
-  # ----------------- AIRFLOW WEB -----------------
   airflow:
     image: apache/airflow:2.9.1
     container_name: airflow
+    depends_on:
+      - postgres
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
-      AIRFLOW__CORE__FERNET_KEY: 'IDuTBGUhBX87tgM9ez-3bQXk8ciMOJPnRhgSf5c_HIs='
-      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    depends_on:
-      - postgres
+      AIRFLOW__CORE__FERNET_KEY: IDuTBGUhBX87tgM9ez-3bQXk8ciMOJPnRhgSf5c_HIs=
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     ports:
-      - "8081:8080"
+      - "10.8.0.1:8081:8080"
     volumes:
       - ./dags:/opt/airflow/dags
       - ./airflow_logs:/opt/airflow/logs
       - ./airflow_plugins:/opt/airflow/plugins
       - /var/run/docker.sock:/var/run/docker.sock
     command: >
-      bash -c "airflow db migrate &&
-              airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com &&
-              exec airflow webserver"
+      bash -c "
+      airflow db migrate &&
+      airflow users create
+        --username admin
+        --password admin
+        --firstname Admin
+        --lastname User
+        --role Admin
+        --email admin@example.com &&
+      exec airflow webserver
+      "
 
-  # ----------------- AIRFLOW SCHEDULER -----------------
   airflow-scheduler:
     image: apache/airflow:2.9.1
     container_name: airflow-scheduler
+    depends_on:
+      - postgres
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
-      AIRFLOW__CORE__FERNET_KEY: 'IDuTBGUhBX87tgM9ez-3bQXk8ciMOJPnRhgSf5c_HIs='
-      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-      _PIP_ADDITIONAL_REQUIREMENTS: "minio apache-airflow-providers-docker==4.0.0 pandas"
-    depends_on:
-      - postgres
+      AIRFLOW__CORE__FERNET_KEY: IDuTBGUhBX87tgM9ez-3bQXk8ciMOJPnRhgSf5c_HIs=
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      _PIP_ADDITIONAL_REQUIREMENTS: minio apache-airflow-providers-docker==4.0.0
     volumes:
       - ./dags:/opt/airflow/dags
       - ./airflow_logs:/opt/airflow/logs
@@ -101,42 +100,39 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     command: airflow scheduler
 
-  # ----------------- DBT -----------------
   dbt:
     image: ghcr.io/dbt-labs/dbt-postgres:1.7.0
     container_name: dbt
-    volumes:
-      - ./dbt:/usr/app
     depends_on:
       - postgres
-  
-  # ----------------- SPARK MASTER -----------------
+    volumes:
+      - ./dbt:/usr/app
+
   spark-master:
     image: airflow/spark-master
     build: ./spark/master
     container_name: spark-master
+    environment:
+      INIT_DAEMON_STEP: setup_spark
     ports:
       - "8082:8080"
       - "7077:7077"
-    environment:
-      - INIT_DAEMON_STEP=setup_spark
 
-  # ----------------- SPARK WORKER -----------------
   spark-worker:
     image: airflow/spark-worker
     build: ./spark/worker
     container_name: spark-worker
     depends_on:
       - spark-master
+    environment:
+      SPARK_MASTER: spark://spark-master:7077
     ports:
       - "8083:8083"
-    environment:
-      - "SPARK_MASTER=spark://spark-master:7077"
 
-  # ----------------- DOCKER PROXY -----------------
   docker-proxy:
     image: alpine/socat
-    command: "TCP4-LISTEN:2375,fork,reuseaddr UNIX-CONNECT:/var/run/docker.sock"
+    container_name: docker-proxy
+    command: TCP4-LISTEN:2375,fork,reuseaddr UNIX-CONNECT:/var/run/docker.sock
     ports:
       - "2376:2375"
     volumes:

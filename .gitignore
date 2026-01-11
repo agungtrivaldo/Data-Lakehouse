@@ -1,2 +1,9 @@
 /dags/__pycache__
 *.pyc
+# Airflow
+airflow_logs/
+airflow_logs/**
+
+# Docker volumes
+**/__pycache__/
+**/*.log
