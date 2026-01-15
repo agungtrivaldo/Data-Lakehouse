@@ -63,7 +63,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: IDuTBGUhBX87tgM9ez-3bQXk8ciMOJPnRhgSf5c_HIs=
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     ports:
-      - "10.8.0.1:8081:8080"
+      - "8081:8080"
     volumes:
       - ./dags:/opt/airflow/dags
       - ./airflow_logs:/opt/airflow/logs
