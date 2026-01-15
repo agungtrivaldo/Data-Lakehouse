@@ -47,7 +47,7 @@ services:
     image: trinodb/trino
     container_name: trino
     ports:
-      - "8080:8080"
+      - "10.8.0.1:8080:8080"
     volumes:
       - ./trino-config:/etc/trino/
       # - ./trino-jars:/usr/lib/trino/plugin/iceberg
@@ -58,12 +58,13 @@ services:
     depends_on:
       - postgres
     environment:
+      AIRFLOW__WEBSERVER__WEB_SERVER_PORT: 8081
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: IDuTBGUhBX87tgM9ez-3bQXk8ciMOJPnRhgSf5c_HIs=
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     ports:
-      - "8081:8080"
+      - "10.8.0.1:8081:8081"
     volumes:
       - ./dags:/opt/airflow/dags
       - ./airflow_logs:/opt/airflow/logs
